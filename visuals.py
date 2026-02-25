@@ -647,23 +647,49 @@ def create_contractor_timeline_chart(df: pd.DataFrame,
     
     # Add trendline for incidents (dashed red line)
     if incidents_col and incidents_col in df_plot.columns:
-        # Calculate trendline (simple moving average or linear trend)
-        x_numeric = range(len(df_grouped))
-        y_values = df_grouped[incidents_col].values
-        
-        # Simple linear trend
-        z = np.polyfit(x_numeric, y_values, 1)
-        trendline = np.poly1d(z)(x_numeric)
-        
-        fig.add_trace(go.Scatter(
-            x=df_grouped['YearMonth'],
-            y=trendline,
-            mode='lines',
-            name='Trend',
-            line=dict(color='#EA4335', width=2, dash='dash'),
-            hovertemplate='<b>%{x}</b><br>Trend: %{y:.1f}<extra></extra>',
-            showlegend=False
-        ))
+        try:
+            # Calculate trendline (simple moving average or linear trend)
+            x_numeric = np.array(range(len(df_grouped)))
+            y_values = df_grouped[incidents_col].fillna(0).values
+            
+            # Check if we have enough data points and variance
+            if len(y_values) >= 2 and np.var(y_values) > 0:
+                # Check for valid numeric values
+                if np.all(np.isfinite(y_values)) and np.all(np.isfinite(x_numeric)):
+                    # Use a more robust method: try polyfit with error handling
+                    try:
+                        z = np.polyfit(x_numeric, y_values, 1)
+                        trendline = np.poly1d(z)(x_numeric)
+                        
+                        # Ensure trendline values are finite
+                        if np.all(np.isfinite(trendline)):
+                            fig.add_trace(go.Scatter(
+                                x=df_grouped['YearMonth'],
+                                y=trendline,
+                                mode='lines',
+                                name='Trend',
+                                line=dict(color='#EA4335', width=2, dash='dash'),
+                                hovertemplate='<b>%{x}</b><br>Trend: %{y:.1f}<extra></extra>',
+                                showlegend=False
+                            ))
+                    except (np.linalg.LinAlgError, ValueError) as e:
+                        # Fallback: use simple moving average instead
+                        window_size = min(3, len(y_values))
+                        if window_size > 1:
+                            trendline_series = pd.Series(y_values).rolling(window=window_size, center=True).mean()
+                            trendline = trendline_series.bfill().ffill().values
+                            fig.add_trace(go.Scatter(
+                                x=df_grouped['YearMonth'],
+                                y=trendline,
+                                mode='lines',
+                                name='Trend',
+                                line=dict(color='#EA4335', width=2, dash='dash'),
+                                hovertemplate='<b>%{x}</b><br>Trend: %{y:.1f}<extra></extra>',
+                                showlegend=False
+                            ))
+        except Exception as e:
+            # Silently skip trendline if calculation fails
+            pass
     
     fig.update_layout(
         barmode='stack',

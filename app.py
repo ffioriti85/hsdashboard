@@ -376,7 +376,10 @@ def create_performance_matrix(df: pd.DataFrame,
         None (data transformation only)
     """
     df_work = df.copy()
-    df_work[date_col] = pd.to_datetime(df_work[date_col], errors='coerce')
+    
+    # Ensure date column is datetime (should already be processed by combine_year_with_date)
+    if date_col and date_col in df_work.columns:
+        df_work[date_col] = pd.to_datetime(df_work[date_col], errors='coerce')
     
     # Filter by fiscal years
     df_current = df_work[df_work[date_col].dt.year == current_year].copy()
@@ -516,6 +519,9 @@ def main():
                     # Get contractor and date columns
                     contractor_col = structure['contractor_columns'][0] if structure['contractor_columns'] else None
                     date_col = structure['date_columns'][0] if structure['date_columns'] else None
+                    
+                    # Combine Year column with date column if Year exists
+                    df = dp.combine_year_with_date(df, date_col)
                     
                     # Normalize data
                     df = dp.normalize_data(df)

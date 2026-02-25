@@ -289,6 +289,89 @@ def filter_by_date_range(df: pd.DataFrame,
     return df[mask]
 
 
+def combine_year_with_date(df: pd.DataFrame, date_col: Optional[str] = None) -> pd.DataFrame:
+    """
+    Combine Year column with date column to create proper datetime values.
+    
+    Args:
+        df: Input DataFrame
+        date_col: Name of the date column (optional, will auto-detect if not provided)
+    
+    Returns:
+        pd.DataFrame: DataFrame with properly formatted dates
+    
+    Side Effects:
+        Modifies the date column in the DataFrame
+    """
+    df_work = df.copy()
+    
+    # Find Year column
+    year_col = None
+    for col in df_work.columns:
+        if str(col).lower() in ['year', 'yr', 'reporting year']:
+            year_col = col
+            break
+    
+    if not year_col or year_col not in df_work.columns:
+        return df_work
+    
+    # Find date column if not provided
+    if not date_col:
+        columns_lower = {str(col).lower(): col for col in df_work.columns}
+        date_patterns = ['date', 'time', 'period', 'month']
+        for pattern in date_patterns:
+            for key, col in columns_lower.items():
+                if pattern in key and 'year' not in key:
+                    date_col = col
+                    break
+            if date_col:
+                break
+    
+    if not date_col or date_col not in df_work.columns:
+        return df_work
+    
+    # Convert Year to numeric
+    df_work['_Year'] = pd.to_numeric(df_work[year_col], errors='coerce')
+    
+    # Convert date column to datetime
+    df_work[date_col] = pd.to_datetime(df_work[date_col], errors='coerce')
+    
+    # Identify rows where date year is invalid (defaulting to 1970 or before 2000)
+    mask_invalid_year = (df_work[date_col].dt.year < 2000) | (df_work[date_col].isna())
+    
+    if mask_invalid_year.any():
+        # For rows with invalid year, combine Year column with date
+        valid_year_mask = df_work['_Year'].notna() & (df_work['_Year'] >= 2000)
+        combined_mask = mask_invalid_year & valid_year_mask
+        
+        if combined_mask.any():
+            # Create new datetime using Year column + month/day from date column
+            try:
+                # Try full date (year-month-day)
+                df_work.loc[combined_mask, date_col] = pd.to_datetime(
+                    df_work.loc[combined_mask, '_Year'].astype(int).astype(str) + '-' + 
+                    df_work.loc[combined_mask, date_col].dt.month.fillna(1).astype(int).astype(str) + '-' + 
+                    df_work.loc[combined_mask, date_col].dt.day.fillna(1).astype(int).astype(str),
+                    errors='coerce'
+                )
+            except:
+                # Fallback: try year-month only
+                try:
+                    df_work.loc[combined_mask, date_col] = pd.to_datetime(
+                        df_work.loc[combined_mask, '_Year'].astype(int).astype(str) + '-' + 
+                        df_work.loc[combined_mask, date_col].dt.month.fillna(1).astype(int).astype(str) + '-01',
+                        errors='coerce'
+                    )
+                except:
+                    pass
+    
+    # Clean up temporary column
+    if '_Year' in df_work.columns:
+        df_work = df_work.drop(columns=['_Year'])
+    
+    return df_work
+
+
 def normalize_data(df: pd.DataFrame) -> pd.DataFrame:
     """
     Normalize and clean the dataset for visualization.
